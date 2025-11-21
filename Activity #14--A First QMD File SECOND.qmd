@@ -1,0 +1,381 @@
+---
+title: "Activity #14 - A First QMD"
+author: "Ryan Sulaiman"
+date: "November 10, 2025"
+format: pdf
+---
+
+# Data Wrangling Code for Armed Forces Data
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(googlesheets4)
+
+# Scrape Rank Data 
+webRanks <- read_html("https://neilhatfield.github.io/Stat184_PayGradeRanks.html") %>%
+  html_elements(css = "table") %>%
+  html_table()
+
+rawRanks <- webRanks[[1]] # Extract the data frame of ranks
+
+# Wrangle Rank Data
+## Enter a value in the first cell (1, 1)
+rawRanks[1, 1] <- "Type"
+## Extract actual column headers
+rankHeaders <- rawRanks[1, ]
+## Apply headers as column names
+names(rawRanks) <- rankHeaders[1,]
+## Remove redundant first row and last row
+rawRanks <- rawRanks[-c(1, 26), ]
+
+cleanRanks <- rawRanks %>%
+  dplyr::select(!Type) %>% # Remove extra column
+  pivot_longer(
+    cols = !`Pay Grade`, # The improper name requires backticks
+    names_to = "Branch",
+    values_to = "Rank"
+  ) %>%
+  mutate(
+    Rank = na_if(x = Rank, y = "--")
+  )
+
+# Load Armed Forces Data
+gs4_deauth()
+forcesHeaders <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE, # Turn off Column Names
+  n_max = 3 # read only the first three rows
+)
+
+rawForces <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE, # Turn off Column Names
+  skip = 3, # Skip the first three rows
+  n_max = 28, # Read only the next 28 rows; drops footer
+  col_types = "c" # Tells R to read everything as character data
+)
+
+# Wrangle Armed Forces Data
+## Create good column names
+### Pattern is Pay Grade followed by 3 columns for each branch in the order
+### Army, Navy, Marine Corp, Air Force, Space Force, and Total
+branchNames <- rep( # Create three copies of each branch
+  x = c("Army", "Navy", "Marine Corps", "Air Force", "Space Force", "Total"),
+  each = 3
+)
+tempHeaders <- paste( # Combine branch with other headers
+  c("", branchNames),
+  forcesHeaders[3,],
+  sep = "."
+)
+
+names(rawForces) <- tempHeaders
+
+cleanForces <- rawForces %>%
+  rename(Pay.Grade = `.Pay Grade`) %>%
+  dplyr::select(!contains("Total")) %>% # Remove total columns
+  filter(Pay.Grade != "Total Enlisted" &
+           Pay.Grade != "Total Warrant Officers" &
+           Pay.Grade != "Total Officers" &
+           Pay.Grade != "Total") %>% # Remove total rows; see note below
+  pivot_longer( # Reshape data
+    cols = !Pay.Grade,
+    names_to = "Branch.Sex",
+    values_to = "Frequency"
+  ) %>%
+  separate_wider_delim( # Separate branches and sex
+    cols = Branch.Sex,
+    delim = ".",
+    names = c("Branch", "Sex")
+  ) %>%
+  mutate(
+    Frequency = na_if(Frequency, y = "N/A*"), # Convert N/A* to missing
+    Frequency = parse_number(Frequency) # Parse values as numbers
+  )
+
+# Merge Data Frames
+key_forcesRanks <- left_join(
+  x = cleanForces,
+  y = cleanRanks,
+  by = join_by(Pay.Grade == `Pay Grade`, Branch == Branch)
+)
+
+# Transform Group into Individual
+key_individualRanks <- key_forcesRanks %>%
+  filter(!is.na(Frequency)) %>% # Remove all cases with missing counts
+  uncount(
+    weights = Frequency
+  )
+
+
+# When removing the total rows, a more concise approach would be to use a logical
+# test for global regular expression printing (grepl) to search for the pattern
+# of "Total" within each cell of the Pay Grade column
+altExample <- rawForces %>%
+  rename(Pay.Grade = `.Pay Grade`) %>%
+  filter(!grepl(pattern = "Total", x = Pay.Grade))
+
+# Alternative reading of the Google Sheet that comes from reading through
+# the documentation of read_sheet
+rawForces <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE,
+  skip = 3,
+  n_max = 28,
+  na = c("N/A*") # Tells R to treat the N/A* as missing values
+)
+```
+
+### Visualization for the Armed Forces
+
+```{r}
+echo=FALSE
+library(tidyverse)
+library(rvest)
+library(googlesheets4)
+library(kableExtra)
+# Scrape Rank Data
+webRanks <- read_html("https://neilhatfield.github.io/Stat184_PayGradeRanks.html") %>%
+  html_elements(css = "table") %>%
+  html_table()
+
+rawRanks <- webRanks[[1]] # Extract the data frame of ranks
+
+# Wrangle Rank Data
+## Enter a value in the first cell (1, 1)
+rawRanks[1, 1] <- "Type"
+## Extract actual column headers
+rankHeaders <- rawRanks[1, ]
+## Apply headers as column names
+names(rawRanks) <- rankHeaders[1,]
+## Remove redundant first row and last row
+rawRanks <- rawRanks[-c(1, 26), ]
+
+cleanRanks <- rawRanks %>%
+  dplyr::select(!Type) %>% # Remove extra column
+  pivot_longer(
+    cols = !`Pay Grade`, # The improper name requires backticks
+    names_to = "Branch",
+    values_to = "Rank"
+  ) %>%
+  mutate(
+    Rank = na_if(x = Rank, y = "--")
+  )
+
+# Load Armed Forces Data
+gs4_deauth()
+forcesHeaders <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE, # Turn off Column Names
+  n_max = 3 # read only the first three rows
+)
+
+rawForces <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE, # Turn off Column Names
+  skip = 3, # Skip the first three rows
+  n_max = 28, # Read only the next 28 rows; drops footer
+  col_types = "c" # Tells R to read everything as character data
+)
+
+# Wrangle Armed Forces Data
+## Create good column names
+### Pattern is Pay Grade followed by 3 columns for each branch in the order
+### Army, Navy, Marine Corp, Air Force, Space Force, and Total
+branchNames <- rep( # Create three copies of each branch
+  x = c("Army", "Navy", "Marine Corps", "Air Force", "Space Force", "Total"),
+  each = 3
+)
+tempHeaders <- paste( # Combine branch with other headers
+  c("", branchNames),
+  forcesHeaders[3,],
+  sep = "."
+)
+
+names(rawForces) <- tempHeaders
+
+cleanForces <- rawForces %>%
+  rename(Pay.Grade = `.Pay Grade`) %>%
+  dplyr::select(!contains("Total")) %>% # Remove total columns
+  filter(Pay.Grade != "Total Enlisted" &
+           Pay.Grade != "Total Warrant Officers" &
+           Pay.Grade != "Total Officers" &
+           Pay.Grade != "Total") %>% # Remove total rows; see note below
+  pivot_longer( # Reshape data
+    cols = !Pay.Grade,
+    names_to = "Branch.Sex",
+    values_to = "Frequency"
+  ) %>%
+  separate_wider_delim( # Separate branches and sex
+    cols = Branch.Sex,
+    delim = ".",
+    names = c("Branch", "Sex")
+  ) %>%
+  mutate(
+    Frequency = na_if(Frequency, y = "N/A*"), # Convert N/A* to missing
+    Frequency = parse_number(Frequency) # Parse values as numbers
+  )
+
+# Merge Data Frames
+key_forcesRanks <- left_join(
+  x = cleanForces,
+  y = cleanRanks,
+  by = join_by(Pay.Grade == `Pay Grade`, Branch == Branch)
+)
+
+# Transform Group into Individual
+key_individualRanks <- key_forcesRanks %>%
+  filter(!is.na(Frequency)) %>% # Remove all cases with missing counts
+  uncount(
+    weights = Frequency
+  )
+
+
+# When removing the total rows, a more concise approach would be to use a logical
+# test for global regular expression printing (grepl) to search for the pattern
+# of "Total" within each cell of the Pay Grade column
+altExample <- rawForces %>%
+  rename(Pay.Grade = `.Pay Grade`) %>%
+  filter(!grepl(pattern = "Total", x = Pay.Grade))
+
+# Alternative reading of the Google Sheet that comes from reading through
+# the documentation of read_sheet
+rawForces <- read_sheet(
+  ss = "https://docs.google.com/spreadsheets/d/1cn4i0-ymB1ZytWXCwsJiq6fZ9PhGLUvbMBHlzqG4bwo/edit?usp=sharing",
+  col_names = FALSE,
+  skip = 3,
+  n_max = 28,
+  na = c("N/A*") # Tells R to treat the N/A* as missing values
+)
+kable(key_forcesRanks, caption = "Armed Forces Visualization")
+```
+
+### Narrative Text for the Armed Forces Section
+
+The visualization displays a table that displays the data of branches of military, sexes of the personnel, pay-grade, and frequency. There are ratios between men and women, however the sex and ranks are independent of each other. There is no causation between the two for their differences. With this table, their are insights that are highlighted within. Such as, the Army consistently holds the largest branch, while the Air Force and Space Force yield the last. Showing the differences across the services, the data provides context for military composition changes.
+
+# Popularity of Baby Names
+
+### Code for the Popular Baby Names Project
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+BabyNames <- read.csv("BabyNames.csv")
+instructors <- c("Mabel", "Bessie", "Catherine", "Elizabeth")
+
+subsetNames <- BabyNames %>%
+              filter(name %in% instructors) %>%
+              group_by(name, year) %>%
+              summarize(
+                total = sum(count),
+                .groups = "drop"
+              )
+```
+
+### Visualization for Popular Baby Names Project
+
+```{r}
+echo=FALSE
+
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+data("BabyNames", packages="dcData")
+
+instructors <- c("Mabel", "Bessie", "Catherine", "Elizabeth")
+
+subsetNames <- BabyNames %>%
+              filter(name %in% instructors) %>%
+              group_by(name, year) %>%
+              summarize(
+                total = sum(count),
+                .groups = "drop"
+              )
+ggplot(subsetNames, mapping = aes(x = year, y = total)
+       ) + geom_line()
+
+psuPalette <- c("#1E407C", "#BC204B", "#3EA39E", "#E98300",
+                "#999999", "#AC8DCE", "#F2665E", "#99CC00")
+
+ggplot(subsetNames, mapping = aes(
+  x = year, 
+  y = total,
+  color = name,
+  linetype = name
+  )
+       ) + geom_line(linewidth = 0.75) +
+  labs(
+    title = "Popularity of the Stat 184 Instructor's First Names Over Time",
+    x = "Year",
+    y = "Total Number of People with Name",
+    color = "Name",
+    linetype = "Name"
+  ) + scale_y_continuous(
+    expand = expansion(mult = 0.01)
+  ) + scale_color_manual(
+    values = psuPalette
+  ) + 
+  theme_bw() +
+  theme(
+    text = element_text(size = 14),
+    legend.kermy.size = unit(1, "cm")
+  )
+```
+
+### Narrative Text for the Popular Baby Names Project
+
+Alt Text: Displaying several line graphs on one graph to show the total number of people with a name, respective to the year.
+
+Long Description: This plot has values for a given names and years. There are 4 names that are being used and the years that name has been given. The graph demonstrates the amount of times the name has been used over time. The different lines indicate the different names based on the legend. There are different growth rates of the lines through the years, with names bouncing back in popularity, steady decreases, and many other rates.
+
+Brief Paragraph: This is a data visualization that has the names of how many people had that specific name for a given year. Creating a line graph for each name, showing the growth of the name throughout the years.
+
+# Plotting a Mathematical Function
+
+### Code
+
+```{r}
+volume.box <- function(x){
+     vol <- (8.5-2*x)*(11-2*x)*(x)
+     return(vol)
+ }
+```
+
+### Visualization
+
+```{r}
+echo=FALSE
+# Define the volume function
+box_volume <- function(x, length = 48, width = 36) {
+  volume <- x * (length - 2 * x) * (width - 2 * x)
+  return(volume)
+}
+
+# Load ggplot2
+library(ggplot2)
+
+# Create the plot
+box_plot <- ggplot(data.frame(x = c(0, 18)), aes(x = x)) +
+  stat_function(fun = box_volume, args = list(length = 48, width = 36),
+                color = "blue", size = 1.2) +
+  labs(
+    title = "Box Problem: Volume vs. Cut Size",
+    x = "Cut size (inches)",
+    y = "Volume (cubic inches)"
+  ) +
+  theme_minimal()
+print(box_plot)
+# Graph of box problem displays volume function for a 36 by 48 inch sheet of paper. Showing the x and y axis cuts in inches, showing the volume in cubic inches. It is a parabolic function.
+
+```
+
+### Narrative Text for the Box Problem
+
+From this visualization, it displays the volume in cubic inches, to the cut size in inches. The max volume is the peak of the parabolic function, the y axis value. Finding the cut size at the maximum as well for the x axis. Looking for the size of the cuts can find the size of the other volumes if looking for specifics, due to limits.
+
+### What You've Learned So Far
+
+There are several meaningful concepts that I have learned throughout the Stat 184 course. For example, how to use R functions and its installable packages. To begin, I learned how to tidy the data. During activity #05, learning how to get specific data values that are useful and taking out data that I do not need. Also, data wrangling, collecting raw data and cleaning up several factors. Handling missing values, removing duplicates, and structuring data into tables. Learning how to make data plots. Using geometric plots to make visualizations. Throughout all the activities, I have utilized these functions and concepts to answer the questions.
